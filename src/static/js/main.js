@@ -40,7 +40,7 @@ if (sendMsg) {
   sendMsg.addEventListener("submit", handleSendMsg);
 }
 
-},{"./socket":5}],2:[function(require,module,exports){
+},{"./socket":7}],2:[function(require,module,exports){
 "use strict";
 
 var _socket = require("./socket");
@@ -82,7 +82,7 @@ if (loginForm) {
   loginForm.addEventListener("submit", handleFormSubmit);
 }
 
-},{"./socket":5}],3:[function(require,module,exports){
+},{"./socket":7}],3:[function(require,module,exports){
 "use strict";
 
 require("./socket");
@@ -91,7 +91,9 @@ require("./login");
 
 require("./chat");
 
-},{"./chat":1,"./login":2,"./socket":5}],4:[function(require,module,exports){
+require("./paint");
+
+},{"./chat":1,"./login":2,"./paint":5,"./socket":7}],4:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -128,11 +130,184 @@ exports.handleDisconnected = handleDisconnected;
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+exports.handleFilled = exports.handleStrokedPath = exports.handleBeganPath = void 0;
+
+var _socket = require("./socket");
+
+var canvas = document.getElementById("jsCanvas");
+var ctx = canvas.getContext("2d");
+var colors = document.getElementsByClassName("jsColor");
+var mode = document.getElementById("jsMode");
+var INITIAL_COLOR = "#2c2c2c";
+var CANVAS_SIZE = 700;
+canvas.width = CANVAS_SIZE;
+canvas.height = CANVAS_SIZE;
+ctx.fillStyle = "white";
+ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+ctx.strokeStyle = INITIAL_COLOR;
+ctx.fillStyle = INITIAL_COLOR;
+ctx.lineWidth = 2.5;
+var painting = false;
+var filling = false;
+
+function stopPainting() {
+  painting = false;
+}
+
+function startPainting() {
+  painting = true;
+}
+
+var beginPath = function beginPath(x, y) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+};
+
+var strokePath = function strokePath(x, y) {
+  var color = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : null;
+  var currentColor = ctx.strokeStyle;
+
+  if (color !== null) {
+    ctx.strokeStyle = color;
+  }
+
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.strokeStyle = currentColor;
+};
+
+function onMouseMove(event) {
+  var x = event.offsetX;
+  var y = event.offsetY;
+
+  if (!painting) {
+    beginPath(x, y);
+    (0, _socket.getSocket)().emit(window.events.beginPath, {
+      x: x,
+      y: y
+    });
+  } else if (!filling) {
+    strokePath(x, y);
+    (0, _socket.getSocket)().emit(window.events.strokePath, {
+      x: x,
+      y: y,
+      color: ctx.strokeStyle
+    });
+  }
+}
+
+function handleColorClick(event) {
+  var color = event.target.style.backgroundColor;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+}
+
+function handleModeClick() {
+  if (filling === true) {
+    filling = false;
+    mode.innerText = "Fill";
+  } else {
+    filling = true;
+    mode.innerText = "Paint";
+  }
+}
+
+var fill = function fill() {
+  var color = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : null;
+  var currentColor = ctx.fillStyle;
+
+  if (color !== null) {
+    ctx.fillStyle = color;
+  }
+
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  ctx.fillStyle = currentColor;
+};
+
+function handleCanvasClick() {
+  if (filling) {
+    fill();
+    (0, _socket.getSocket)().emit(window.events.fill, {
+      color: ctx.fillStyle
+    });
+  }
+}
+
+function handleCM(event) {
+  event.preventDefault();
+}
+
+if (canvas) {
+  canvas.addEventListener("mousemove", onMouseMove);
+  canvas.addEventListener("mousedown", startPainting);
+  canvas.addEventListener("mouseup", stopPainting);
+  canvas.addEventListener("mouseleave", stopPainting);
+  canvas.addEventListener("click", handleCanvasClick);
+  canvas.addEventListener("contextmenu", handleCM);
+}
+
+Array.from(colors).forEach(function (color) {
+  return color.addEventListener("click", handleColorClick);
+});
+
+if (mode) {
+  mode.addEventListener("click", handleModeClick);
+}
+
+var handleBeganPath = function handleBeganPath(_ref) {
+  var x = _ref.x,
+      y = _ref.y;
+  return beginPath(x, y);
+};
+
+exports.handleBeganPath = handleBeganPath;
+
+var handleStrokedPath = function handleStrokedPath(_ref2) {
+  var x = _ref2.x,
+      y = _ref2.y,
+      color = _ref2.color;
+  return strokePath(x, y, color);
+};
+
+exports.handleStrokedPath = handleStrokedPath;
+
+var handleFilled = function handleFilled(_ref3) {
+  var color = _ref3.color;
+  return fill(color);
+};
+
+exports.handleFilled = handleFilled;
+
+},{"./socket":7}],6:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.handlePlayerUpdate = void 0;
+
+var handlePlayerUpdate = function handlePlayerUpdate(_ref) {
+  var sockets = _ref.sockets;
+  return console.log(sockets);
+};
+
+exports.handlePlayerUpdate = handlePlayerUpdate;
+
+},{}],7:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 exports.initSockets = exports.updateSocket = exports.getSocket = void 0;
 
 var _chat = require("./chat");
 
 var _notification = require("./notification");
+
+var _paint = require("./paint");
+
+var _players = require("./players");
 
 var socket = null;
 
@@ -152,11 +327,16 @@ var initSockets = function initSockets(aSocket) {
   var _window = window,
       events = _window.events;
   updateSocket(aSocket);
-  aSocket.on(events.newUser, _notification.handleNewUser);
-  aSocket.on(events.disconnected, _notification.handleDisconnected);
-  aSocket.on(events.newMsg, _chat.handleNewMessage);
+  socket = aSocket;
+  socket.on(events.newUser, _notification.handleNewUser);
+  socket.on(events.disconnected, _notification.handleDisconnected);
+  socket.on(events.newMsg, _chat.handleNewMessage);
+  socket.on(events.beganPath, _paint.handleBeganPath);
+  socket.on(events.strokedPath, _paint.handleStrokedPath);
+  socket.on(events.filled, _paint.handleFilled);
+  socket.on(events.playerUpdate, _players.handlePlayerUpdate);
 };
 
 exports.initSockets = initSockets;
 
-},{"./chat":1,"./notification":4}]},{},[3]);
+},{"./chat":1,"./notification":4,"./paint":5,"./players":6}]},{},[3]);
